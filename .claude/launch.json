@@ -4,8 +4,8 @@
     {
       "name": "mangatu-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5180
+      "runtimeArgs": ["run", "dev:vercel"],
+      "port": 3000
     }
   ]
 }

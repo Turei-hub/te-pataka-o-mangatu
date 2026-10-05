@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Lock, Unlock, ShieldCheck, Plus, X, KeyRound, ScrollText, AlertTriangle, Loader2 } from 'lucide-react';
+import { Lock, Unlock, ShieldCheck, Plus, X, KeyRound, ScrollText, AlertTriangle, Loader2, Trash2 } from 'lucide-react';
+import { listEntries, createEntry, deleteEntry, AdminKeyError } from '../api.js';
 
 // ---------- crypto helpers (real client-side AES-GCM, key never leaves the browser) ----------
 
@@ -25,7 +26,7 @@ async function deriveKey(password, saltB64) {
     'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -60,16 +61,25 @@ const CATEGORIES = [
   { id: 'korero', label: 'Kōrero Tuku Iho', desc: 'Oral history & stories' },
 ];
 
-const STORAGE_KEY = 'mangatu-vault-items';
+const MIN_PASSPHRASE = 10;
 
 export default function MangatuVault() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [unlocked, setUnlocked] = useState({}); // id -> plaintext
+  const [unlocked, setUnlocked] = useState({}); // id -> { name, content }
   const [unlockError, setUnlockError] = useState({});
   const [busy, setBusy] = useState({});
   const [passInputs, setPassInputs] = useState({});
+  const [confirmDelete, setConfirmDelete] = useState({});
+  const [deleting, setDeleting] = useState({});
+  const [deleteError, setDeleteError] = useState({});
+
+  // admin key: held in memory for this tab only, never persisted
+  const [adminKey, setAdminKey] = useState('');
+  const [keyPrompt, setKeyPrompt] = useState(null); // { reason, resolve }
+  const [keyInput, setKeyInput] = useState('');
 
   // add form state
   const [formName, setFormName] = useState('');
@@ -82,23 +92,50 @@ export default function MangatuVault() {
 
   const loadItems = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
-      const result = await window.storage.get(STORAGE_KEY, true);
-      setItems(result ? JSON.parse(result.value) : []);
-    } catch {
+      setItems(await listEntries());
+    } catch (e) {
+      console.error('Load error', e);
       setItems([]);
+      setLoadError("Couldn't reach the pātaka. Check your connection and reload.");
     }
     setLoading(false);
   }, []);
 
   useEffect(() => { loadItems(); }, [loadItems]);
 
-  async function saveItems(next) {
-    setItems(next);
-    try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(next), true);
-    } catch (e) {
-      console.error('Storage error', e);
+  function askAdminKey(reason) {
+    setKeyInput('');
+    return new Promise(resolve => setKeyPrompt({ reason, resolve }));
+  }
+
+  function closeKeyPrompt(value) {
+    keyPrompt?.resolve(value);
+    setKeyPrompt(null);
+    setKeyInput('');
+  }
+
+  // Runs action(key), prompting for the admin key if we don't have one or it's rejected.
+  // Returns { cancelled: true } if the user dismisses the prompt.
+  async function withAdminKey(action) {
+    let key = adminKey;
+    let reason = 'Enter the admin key to make changes to the pātaka.';
+    for (;;) {
+      if (!key) {
+        key = await askAdminKey(reason);
+        if (!key) return { cancelled: true };
+      }
+      try {
+        const result = await action(key);
+        setAdminKey(key);
+        return { result };
+      } catch (e) {
+        if (!(e instanceof AdminKeyError)) throw e;
+        setAdminKey('');
+        key = '';
+        reason = 'That admin key was rejected. Try again.';
+      }
     }
   }
 
@@ -113,24 +150,31 @@ export default function MangatuVault() {
       setFormError("Passphrases don't match.");
       return;
     }
-    if (formPassword.length < 6) {
-      setFormError('Passphrase should be at least 6 characters.');
+    if (formPassword.length < MIN_PASSPHRASE) {
+      setFormError(`Passphrase should be at least ${MIN_PASSPHRASE} characters.`);
       return;
     }
     setFormBusy(true);
     try {
-      const encrypted = await encryptText(formPassword, formContent);
-      const newItem = {
-        id: crypto.randomUUID(),
-        name: formName.trim(),
+      const [name, content] = await Promise.all([
+        encryptText(formPassword, formName.trim()),
+        encryptText(formPassword, formContent),
+      ]);
+      const entry = {
+        name_enc: name.ciphertext,
+        name_iv: name.iv,
+        name_salt: name.salt,
         category: formCategory,
-        createdAt: new Date().toISOString(),
-        ...encrypted,
+        ...content,
       };
-      await saveItems([newItem, ...items]);
-      setFormName(''); setFormContent(''); setFormPassword(''); setFormPassword2('');
-      setShowAdd(false);
-    } catch {
+      const { cancelled, result: saved } = await withAdminKey(key => createEntry(entry, key));
+      if (!cancelled) {
+        setItems(prev => [saved, ...prev]);
+        setFormName(''); setFormContent(''); setFormPassword(''); setFormPassword2('');
+        setShowAdd(false);
+      }
+    } catch (err) {
+      console.error('Save error', err);
       setFormError('Something went wrong sealing this entry. Try again.');
     }
     setFormBusy(false);
@@ -142,8 +186,11 @@ export default function MangatuVault() {
     setBusy(b => ({ ...b, [item.id]: true }));
     setUnlockError(e => ({ ...e, [item.id]: '' }));
     try {
-      const plain = await decryptText(pw, item);
-      setUnlocked(u => ({ ...u, [item.id]: plain }));
+      const [name, content] = await Promise.all([
+        decryptText(pw, { ciphertext: item.name_enc, iv: item.name_iv, salt: item.name_salt }),
+        decryptText(pw, item),
+      ]);
+      setUnlocked(u => ({ ...u, [item.id]: { name, content } }));
     } catch {
       setUnlockError(e => ({ ...e, [item.id]: 'Wrong passphrase — the seal held.' }));
     }
@@ -153,6 +200,23 @@ export default function MangatuVault() {
   function handleLock(id) {
     setUnlocked(u => { const n = { ...u }; delete n[id]; return n; });
     setPassInputs(p => ({ ...p, [id]: '' }));
+  }
+
+  async function handleDelete(id) {
+    setDeleting(d => ({ ...d, [id]: true }));
+    setDeleteError(e => ({ ...e, [id]: '' }));
+    try {
+      const { cancelled } = await withAdminKey(key => deleteEntry(id, key));
+      if (!cancelled) {
+        setItems(prev => prev.filter(i => i.id !== id));
+        handleLock(id);
+      }
+    } catch (err) {
+      console.error('Delete error', err);
+      setDeleteError(e => ({ ...e, [id]: "Couldn't delete this entry. Try again." }));
+    }
+    setConfirmDelete(c => ({ ...c, [id]: false }));
+    setDeleting(d => ({ ...d, [id]: false }));
   }
 
   const catInfo = (id) => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
@@ -195,7 +259,7 @@ export default function MangatuVault() {
         {/* Notice */}
         <div style={{ display: 'flex', gap: 10, background: '#211B15', border: '1px solid #3E342A', borderRadius: 10, padding: '12px 14px', marginBottom: 24, fontSize: 13, color: '#B8AC97', lineHeight: 1.5 }}>
           <AlertTriangle size={16} color="#C77D3B" style={{ flexShrink: 0, marginTop: 2 }} />
-          <span>This is a shared demo space — anyone with this link can see the sealed entries below, but the content stays locked unless they know the passphrase you set for it. Don't put anything here you're not ready to demo.</span>
+          <span>Entries are stored encrypted in a shared database. Anyone who can reach this site can see that an entry exists, its category and its date — but the name and content stay sealed unless they know its passphrase. Only holders of the admin key can add or delete entries. A lost passphrase can't be recovered.</span>
         </div>
 
         {/* Add button */}
@@ -231,10 +295,10 @@ export default function MangatuVault() {
             <textarea value={formContent} onChange={e => setFormContent(e.target.value)} rows={5} placeholder="Whakapapa, karakia text, hui minutes, kōrero..." style={{ ...fieldInput, resize: 'vertical', fontFamily: 'inherit' }} />
 
             <label style={fieldLabel}>Set a passphrase for this entry</label>
-            <input type="password" value={formPassword} onChange={e => setFormPassword(e.target.value)} placeholder="At least 6 characters" style={fieldInput} />
+            <input type="password" value={formPassword} onChange={e => setFormPassword(e.target.value)} placeholder={`At least ${MIN_PASSPHRASE} characters`} style={fieldInput} />
             <input type="password" value={formPassword2} onChange={e => setFormPassword2(e.target.value)} placeholder="Confirm passphrase" style={fieldInput} />
             <p style={{ fontSize: 12, color: '#7C7263', marginTop: -4, marginBottom: 14 }}>
-              Share this passphrase only with whoever should be able to open this entry. It's never stored anywhere — if it's lost, the entry can't be recovered.
+              It seals both the name and the content. Share it only with whoever should be able to open this entry. It's never stored anywhere — if it's lost, the entry can't be recovered.
             </p>
 
             {formError && <p style={{ color: '#D98577', fontSize: 13, marginBottom: 10 }}>{formError}</p>}
@@ -249,6 +313,8 @@ export default function MangatuVault() {
         {/* List */}
         {loading ? (
           <p style={{ color: '#7C7263', fontSize: 14 }}>Opening the pātaka…</p>
+        ) : loadError ? (
+          <p style={{ color: '#D98577', fontSize: 14 }}>{loadError}</p>
         ) : items.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: '#7C7263' }}>
             <ScrollText size={28} style={{ marginBottom: 10, opacity: 0.6 }} />
@@ -262,17 +328,52 @@ export default function MangatuVault() {
               return (
                 <div key={item.id} style={{ background: '#211B15', border: `1px solid ${isOpen ? '#3E6653' : '#3E342A'}`, borderRadius: 12, padding: 16, transition: 'border-color 0.3s' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: '#C77D3B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{cat.label}</span>
-                      <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, margin: '4px 0 0' }}>{item.name}</h3>
-                      <p style={{ fontSize: 12, color: '#7C7263', margin: '2px 0 0' }}>{new Date(item.createdAt).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                      <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, margin: '4px 0 0', overflowWrap: 'anywhere', ...(isOpen ? {} : { fontStyle: 'italic', color: '#7C7263' }) }}>
+                        {isOpen ? unlocked[item.id].name : 'Sealed entry'}
+                      </h3>
+                      <p style={{ fontSize: 12, color: '#7C7263', margin: '2px 0 0' }}>{new Date(item.created_at).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                     </div>
-                    {isOpen ? <Unlock size={18} color="#3E6653" style={{ flexShrink: 0 }} /> : <Lock size={18} color="#7C7263" style={{ flexShrink: 0 }} />}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                      {isOpen ? <Unlock size={18} color="#3E6653" /> : <Lock size={18} color="#7C7263" />}
+                      {!confirmDelete[item.id] && (
+                        <button
+                          onClick={() => setConfirmDelete(c => ({ ...c, [item.id]: true }))}
+                          aria-label="Delete entry"
+                          title="Delete entry"
+                          style={{ background: 'none', border: 'none', color: '#7C7263', cursor: 'pointer', padding: 2, display: 'flex' }}
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {confirmDelete[item.id] && (
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, background: '#2A1D18', border: '1px solid #5A3A30', borderRadius: 8, padding: '8px 12px', fontSize: 13 }}>
+                      <span style={{ flex: 1, minWidth: 160 }}>Delete this entry for good? This can't be undone.</span>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        disabled={deleting[item.id]}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#B5503F', color: '#EDE3D3', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 13, fontWeight: 600, cursor: deleting[item.id] ? 'default' : 'pointer' }}
+                      >
+                        {deleting[item.id] ? <Loader2 size={13} className="spin" /> : <Trash2 size={13} />} Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(c => ({ ...c, [item.id]: false }))}
+                        disabled={deleting[item.id]}
+                        style={{ background: 'none', border: '1px solid #3E342A', color: '#B8AC97', borderRadius: 6, padding: '6px 12px', fontSize: 13, cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  {deleteError[item.id] && <p style={{ color: '#D98577', fontSize: 12, marginTop: 6 }}>{deleteError[item.id]}</p>}
 
                   {isOpen ? (
                     <div style={{ marginTop: 12 }}>
-                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.6, background: '#171310', border: '1px solid #2E2620', borderRadius: 8, padding: 12, margin: 0 }}>{unlocked[item.id]}</pre>
+                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.6, background: '#171310', border: '1px solid #2E2620', borderRadius: 8, padding: 12, margin: 0 }}>{unlocked[item.id].content}</pre>
                       <button onClick={() => handleLock(item.id)} style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: '1px solid #3E342A', color: '#B8AC97', borderRadius: 8, padding: '7px 12px', fontSize: 13, cursor: 'pointer' }}>
                         <Lock size={13} /> Re-seal
                       </button>
@@ -304,6 +405,46 @@ export default function MangatuVault() {
           </div>
         )}
       </main>
+
+      {/* Admin key prompt */}
+      {keyPrompt && (
+        <div
+          onClick={() => closeKeyPrompt(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(10,8,6,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 10 }}
+        >
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-key-title"
+            onClick={e => e.stopPropagation()}
+            onSubmit={e => { e.preventDefault(); if (keyInput) closeKeyPrompt(keyInput); }}
+            onKeyDown={e => e.key === 'Escape' && closeKeyPrompt(null)}
+            style={{ width: '100%', maxWidth: 400, background: '#211B15', border: '1px solid #3E342A', borderRadius: 14, padding: 20 }}
+          >
+            <h2 id="admin-key-title" style={{ fontFamily: "'Fraunces', serif", fontSize: 20, margin: '0 0 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <KeyRound size={18} color="#C77D3B" /> Admin key
+            </h2>
+            <p style={{ fontSize: 13, color: '#B8AC97', margin: '0 0 12px', lineHeight: 1.5 }}>{keyPrompt.reason}</p>
+            <input
+              type="password"
+              autoFocus
+              value={keyInput}
+              onChange={e => setKeyInput(e.target.value)}
+              placeholder="Admin key"
+              style={fieldInput}
+            />
+            <p style={{ fontSize: 12, color: '#7C7263', margin: '0 0 14px' }}>Kept in memory for this tab only — you'll be asked again after a reload.</p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => closeKeyPrompt(null)} style={{ background: 'none', border: '1px solid #3E342A', color: '#B8AC97', borderRadius: 8, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="submit" disabled={!keyInput} className="seal-btn" style={{ background: '#C77D3B', color: '#171310', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: keyInput ? 'pointer' : 'default', opacity: keyInput ? 1 : 0.6 }}>
+                Continue
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <style>{`
         .spin { animation: spin 0.8s linear infinite; }

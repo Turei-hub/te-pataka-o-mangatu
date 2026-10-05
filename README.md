@@ -10,32 +10,63 @@ is ever stored**. Only whoever holds an entry's passphrase can open it.
 
 Real client-side cryptography, keys never leave the device:
 
-- **AES-GCM** (256-bit) for content encryption
-- **PBKDF2** key derivation — 150,000 iterations, SHA-256, per-entry random salt
-- A unique passphrase per entry; the key is derived on unlock and discarded on re-seal
+- **AES-GCM** (256-bit) for both the entry name and its content
+- **PBKDF2** key derivation — 600,000 iterations, SHA-256, random salt per field
+- A unique passphrase per entry (minimum 10 characters); the key is derived on unlock and discarded on re-seal
 - Passphrases are never stored — if lost, the entry cannot be recovered
+
+The server only ever sees ciphertext. Category and creation date are stored in plain text.
+
+## Storage
+
+Entries live in Neon Postgres, reached through a Vercel serverless function
+(`api/entries.js`). Listing is public (it returns only ciphertext plus category/date);
+adding and deleting require the `ADMIN_KEY`, which the browser asks for and keeps in
+memory for the current tab only.
+
+Create the table once in Neon's SQL Editor:
+
+```sql
+create table if not exists entries (
+  id          uuid primary key default gen_random_uuid(),
+  name_enc    text not null,
+  name_iv     text not null,
+  name_salt   text not null,
+  category    text not null,
+  ciphertext  text not null,
+  iv          text not null,
+  salt        text not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists entries_created_at_idx on entries (created_at desc);
+```
 
 ## Running locally
 
-```bash
-npm install
-npm run dev
+`.env` (gitignored) needs:
+
+```dotenv
+DATABASE_URL=postgres://...
+ADMIN_KEY=<long random string>
 ```
 
-Then open http://localhost:5180.
+Neither is prefixed with `VITE_`, so Vite never bundles them into the frontend.
+
+```bash
+npm install
+vercel link      # once
+vercel dev       # or: npm run dev:vercel
+```
+
+Then open <http://localhost:3000>. (`npm run dev` still starts Vite alone, but `/api` won't exist.)
+
+For deployment, add both variables to the Vercel project: `vercel env add DATABASE_URL`, `vercel env add ADMIN_KEY`.
 
 ## Project layout
 
 | Path | Purpose |
 | --- | --- |
 | `src/components/MangatuVault.jsx` | The vault component (UI + crypto) |
-| `src/storageShim.js` | Local-dev `window.storage` shim, backed by `localStorage` |
-| `src/main.jsx` | App entry — imports the shim first, then renders the vault |
-
-## Note on storage
-
-The component was first authored as a Claude Artifact and calls the Artifacts
-`window.storage` API. For local development that API is shimmed with `localStorage`
-(`src/storageShim.js`). For a real deployment — ideally iwi/hapū-controlled hosting,
-in keeping with the kaupapa of data sovereignty — replace that shim with proper
-persistence.
+| `src/api.js` | Browser client for `/api/entries` |
+| `api/entries.js` | Vercel function: GET / POST / DELETE against Neon |
+| `src/main.jsx` | App entry |
