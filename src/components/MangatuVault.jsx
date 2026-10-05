@@ -224,7 +224,8 @@ export default function MangatuVault() {
   return (
     <div style={{ minHeight: '100vh', background: '#171310', color: '#EDE3D3', fontFamily: "'Inter', system-ui, sans-serif" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+        @font-face { font-family: 'Fraunces'; src: url('/fonts/fraunces-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
         * { box-sizing: border-box; }
         .weave-bg {
           background-image: repeating-linear-gradient(45deg, rgba(199,125,59,0.06) 0px, rgba(199,125,59,0.06) 1px, transparent 1px, transparent 14px),
