@@ -70,3 +70,12 @@ For deployment, add both variables to the Vercel project: `vercel env add DATABA
 | `src/api.js` | Browser client for `/api/entries` |
 | `api/entries.js` | Vercel function: GET / POST / DELETE against Neon |
 | `src/main.jsx` | App entry |
+
+## Media attachments (photos, video, audio)
+
+Files are encrypted in the browser in 4 MiB AES-GCM chunks (same passphrase as the entry) and uploaded straight to Vercel Blob as ciphertext. Neon's `media` table holds the blob URL, IV/salt and encrypted metadata (file name, type, size).
+
+Setup:
+1. Run `migrations/002_media.sql` in the Neon SQL editor.
+2. Vercel → Storage → Create Blob store (pick Sydney), connect it to this project. That adds `BLOB_READ_WRITE_TOKEN`.
+3. Redeploy.

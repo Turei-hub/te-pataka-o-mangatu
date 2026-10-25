@@ -32,3 +32,11 @@ export function deleteEntry(id, adminKey) {
     headers: { 'x-admin-key': adminKey },
   });
 }
+
+// Short-lived token for one encrypted upload straight to the blob store.
+export function getMediaToken(adminKey) {
+  return request('/api/media-token', {
+    method: 'POST',
+    headers: { 'x-admin-key': adminKey },
+  });
+}
