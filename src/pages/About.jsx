@@ -49,10 +49,29 @@ export default function About() {
       </Card>
 
       <H2>Nā wai i hanga? · Who built it</H2>
+      <Card style={{ borderLeft: '3px solid #C77D3B', marginBottom: 16 }}>
+        <p lang="mi" style={{ fontFamily: "'Fraunces', serif", fontSize: 17, lineHeight: 1.8, margin: 0, color: '#EDE3D3' }}>
+          Ko Turei tōku ingoa<br />
+          Ko Maungahaumia te maunga<br />
+          Ko Waipaoa te awa<br />
+          Ko Horouta te waka<br />
+          Ko Ngāriki Kaipūtahi te iwi ki te taha o tōku māmā<br />
+          Ko Ngāti Porou te iwi ki te taha o tōku pāpā
+        </p>
+      </Card>
       <P>
-        Built by Turei Milner of Kaupeka Digital. Turei is from Mangatū and grew up in Whatatutu. The pātaka is built
-        for the marae and guided by whānau. Decisions about what goes in it and who holds the keys belong to the marae,
-        not the developer.
+        I grew up in Whatatutu and spent years working with my hands: felling trees, building, working the bush. That
+        mahi taught me to work with precision and see a job through, and I bring the same into code.
+      </P>
+      <P>
+        Moving into software was a deliberate choice. What clicked for me at Mission Ready was realising I could build
+        tools that serve communities, especially my own. Te Pātaka o Mangatū is that kaupapa: a safe place for our
+        taonga, built by one of our own, through Kaupeka Digital. Decisions about what goes in it and who holds the keys
+        belong to the marae, not the developer.
+      </P>
+      <P>I'm a father, and this mahi is part of what I'm leaving for my sons.</P>
+      <P>
+        More of my story: <a href="https://turei.dev" target="_blank" rel="noopener noreferrer">turei.dev</a>
       </P>
     </PageShell>
   );
