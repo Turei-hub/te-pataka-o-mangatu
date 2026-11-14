@@ -78,6 +78,10 @@ export default function App() {
             {ROUTES.map(r => <li key={r.path}><a href={`#${r.path}`}>{r.reo}</a></li>)}
           </ul>
           <p style={{ fontSize: 12, color: '#B8AC97', margin: '6px 0 0' }}>Whatatutu, Tairāwhiti · Landscape images are AI-generated, not photos of Mangatū.</p>
+          <div style={{ borderTop: '1px solid rgba(237,227,211,0.15)', marginTop: 16, paddingTop: 12, fontSize: 12, color: '#B8AC97', lineHeight: 1.6 }}>
+            <p style={{ margin: 0 }}>© 2026 Turei Milner (Ngāriki Kaipūtahi) · Kaupeka Digital</p>
+            <p style={{ margin: 0 }}>The taonga held in this pātaka belong to the whānau and hapū of Mangatū.</p>
+          </div>
         </div>
       </footer>
     </div>
