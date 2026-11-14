@@ -290,6 +290,13 @@ export default function MangatuVault() {
           background-image: repeating-linear-gradient(45deg, rgba(199,125,59,0.06) 0px, rgba(199,125,59,0.06) 1px, transparent 1px, transparent 14px),
                              repeating-linear-gradient(-45deg, rgba(62,102,83,0.06) 0px, rgba(62,102,83,0.06) 1px, transparent 1px, transparent 14px);
         }
+        .hero-bg {
+          background-image: linear-gradient(180deg, rgba(23,19,16,0.35) 0%, rgba(23,19,16,0.75) 60%, #171310 100%), url('/images/hero-river.jpg');
+          background-size: cover; background-position: center 40%;
+        }
+        .img-banner { position: relative; border-radius: 14px; overflow: hidden; background: #211B15 center / cover no-repeat; border: 1px solid #2E2620; }
+        .img-banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(23,19,16,0.85) 0%, rgba(23,19,16,0.25) 100%); }
+        .img-banner > * { position: relative; z-index: 1; }
         .seal-btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
           outline: 2px solid #C77D3B; outline-offset: 2px;
         }
@@ -297,7 +304,7 @@ export default function MangatuVault() {
       `}</style>
 
       {/* Header */}
-      <header className="weave-bg" style={{ borderBottom: '1px solid #2E2620', padding: '32px 20px 28px' }}>
+      <header className="weave-bg hero-bg" style={{ borderBottom: '1px solid #2E2620', padding: '96px 20px 36px' }}>
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <ShieldCheck size={20} color="#3E6653" />
@@ -405,6 +412,12 @@ export default function MangatuVault() {
             )}
           </form>
         )}
+
+        {/* Taonga banner */}
+        <div className="img-banner" style={{ backgroundImage: "url('/images/hills-mist.jpg')", padding: '28px 20px', marginBottom: 20 }}>
+          <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 22, margin: 0 }}>Ngā taonga</h2>
+          <p style={{ fontSize: 13, color: '#B8AC97', margin: '4px 0 0' }}>Sealed entries. Only the passphrase holder can open each one.</p>
+        </div>
 
         {/* List */}
         {loading ? (
@@ -521,6 +534,14 @@ export default function MangatuVault() {
           </div>
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="img-banner" style={{ backgroundImage: "url('/images/bush-bend.jpg')", borderRadius: 0, borderLeft: 'none', borderRight: 'none', borderBottom: 'none', padding: '56px 20px 40px' }}>
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          <p style={{ fontFamily: "'Fraunces', serif", fontSize: 18, margin: 0 }}>Te Pātaka o Mangatū</p>
+          <p style={{ fontSize: 12, color: '#B8AC97', margin: '6px 0 0' }}>Whatatutu, Tairāwhiti · Landscape images are AI-generated, not photos of Mangatū.</p>
+        </div>
+      </footer>
 
       {/* Admin key prompt */}
       {keyPrompt && (
