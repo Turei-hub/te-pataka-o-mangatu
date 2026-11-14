@@ -1,9 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import MangatuVault from './components/MangatuVault.jsx';
+import App from './App.jsx';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <MangatuVault />
+    <App />
   </React.StrictMode>
 );

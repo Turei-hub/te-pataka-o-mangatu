@@ -21,7 +21,7 @@ const CATEGORIES = [
 
 const MIN_PASSPHRASE = 10;
 
-export default function MangatuVault() {
+export default function MangatuVault({ adminKey, setAdminKey, sealRequest = 0, onSealHandled }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -34,8 +34,7 @@ export default function MangatuVault() {
   const [deleting, setDeleting] = useState({});
   const [deleteError, setDeleteError] = useState({});
 
-  // admin key: held in memory for this tab only, never persisted
-  const [adminKey, setAdminKey] = useState('');
+  // admin key: held in memory for this tab only, never persisted (state lives in App so it survives page changes)
   const [keyPrompt, setKeyPrompt] = useState(null); // { reason, resolve }
   const [keyInput, setKeyInput] = useState('');
 
@@ -59,6 +58,16 @@ export default function MangatuVault() {
   const photoInput = useRef(null);
   const videoInput = useRef(null);
   const deviceInput = useRef(null);
+  const [filter, setFilter] = useState('all');
+
+  // "Seal new entry" pressed in the nav
+  useEffect(() => {
+    if (!sealRequest) return;
+    setShowAdd(true);
+    onSealHandled?.();
+    // no cleanup on purpose: onSealHandled resets sealRequest straight away and would cancel the scroll
+    setTimeout(() => document.getElementById('seal-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }, [sealRequest, onSealHandled]);
 
   function addFiles(list) {
     setFormError('');
@@ -278,30 +287,13 @@ export default function MangatuVault() {
     setDeleting(d => ({ ...d, [id]: false }));
   }
 
+  const visibleItems = filter === 'all' ? items : items.filter(i => i.category === filter);
+  const countFor = (id) => items.filter(i => i.category === id).length;
+
   const catInfo = (id) => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#171310', color: '#EDE3D3', fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
-        @font-face { font-family: 'Fraunces'; src: url('/fonts/fraunces-var.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
-        * { box-sizing: border-box; }
-        .weave-bg {
-          background-image: repeating-linear-gradient(45deg, rgba(199,125,59,0.06) 0px, rgba(199,125,59,0.06) 1px, transparent 1px, transparent 14px),
-                             repeating-linear-gradient(-45deg, rgba(62,102,83,0.06) 0px, rgba(62,102,83,0.06) 1px, transparent 1px, transparent 14px);
-        }
-        .hero-bg {
-          background-image: linear-gradient(180deg, rgba(23,19,16,0.35) 0%, rgba(23,19,16,0.75) 60%, #171310 100%), url('/images/hero-river.jpg');
-          background-size: cover; background-position: center 40%;
-        }
-        .img-banner { position: relative; border-radius: 14px; overflow: hidden; background: #211B15 center / cover no-repeat; border: 1px solid #2E2620; }
-        .img-banner::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(23,19,16,0.85) 0%, rgba(23,19,16,0.25) 100%); }
-        .img-banner > * { position: relative; z-index: 1; }
-        .seal-btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
-          outline: 2px solid #C77D3B; outline-offset: 2px;
-        }
-        @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-      `}</style>
+    <>
 
       {/* Header */}
       <header className="weave-bg hero-bg" style={{ borderBottom: '1px solid #2E2620', padding: '96px 20px 36px' }}>
@@ -342,7 +334,7 @@ export default function MangatuVault() {
 
         {/* Add form */}
         {showAdd && (
-          <form onSubmit={handleAdd} autoComplete="off" style={{ background: '#211B15', border: '1px solid #3E342A', borderRadius: 14, padding: 20, marginBottom: 28 }}>
+          <form id="seal-form" onSubmit={handleAdd} autoComplete="off" style={{ background: '#211B15', border: '1px solid #3E342A', borderRadius: 14, padding: 20, marginBottom: 28 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h2 style={{ fontFamily: "'Fraunces', serif", fontSize: 20, margin: 0 }}>New entry</h2>
               <button type="button" onClick={() => setShowAdd(false)} style={{ background: 'none', border: 'none', color: '#B8AC97', cursor: 'pointer' }}>
@@ -419,6 +411,20 @@ export default function MangatuVault() {
           <p style={{ fontSize: 13, color: '#B8AC97', margin: '4px 0 0' }}>Sealed entries. Only the passphrase holder can open each one.</p>
         </div>
 
+        {/* Category filter */}
+        {!loading && !loadError && items.length > 0 && (
+          <div className="cat-tabs" role="tablist" aria-label="Filter by category">
+            {[{ id: 'all', label: 'Katoa · All' }, ...CATEGORIES].map(c => {
+              const n = c.id === 'all' ? items.length : countFor(c.id);
+              return (
+                <button key={c.id} type="button" role="tab" aria-selected={filter === c.id} className={`cat-tab${filter === c.id ? ' active' : ''}`} onClick={() => setFilter(c.id)}>
+                  {c.label}<span className="count">{n}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* List */}
         {loading ? (
           <p style={{ color: '#7C7263', fontSize: 14 }}>Opening the pātaka…</p>
@@ -429,9 +435,13 @@ export default function MangatuVault() {
             <ScrollText size={28} style={{ marginBottom: 10, opacity: 0.6 }} />
             <p style={{ fontSize: 14 }}>Nothing stored yet. The first entry you seal will sit here, encrypted, waiting for whoever holds the key.</p>
           </div>
+        ) : visibleItems.length === 0 ? (
+          <p style={{ textAlign: 'center', padding: '28px 20px', color: '#7C7263', fontSize: 14 }}>
+            No {catInfo(filter).label} entries yet.
+          </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {items.map(item => {
+            {visibleItems.map(item => {
               const isOpen = unlocked[item.id] !== undefined;
               const cat = catInfo(item.category);
               return (
@@ -535,19 +545,11 @@ export default function MangatuVault() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="img-banner" style={{ backgroundImage: "url('/images/bush-bend.jpg')", borderRadius: 0, borderLeft: 'none', borderRight: 'none', borderBottom: 'none', padding: '56px 20px 40px' }}>
-        <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          <p style={{ fontFamily: "'Fraunces', serif", fontSize: 18, margin: 0 }}>Te Pātaka o Mangatū</p>
-          <p style={{ fontSize: 12, color: '#B8AC97', margin: '6px 0 0' }}>Whatatutu, Tairāwhiti · Landscape images are AI-generated, not photos of Mangatū.</p>
-        </div>
-      </footer>
-
       {/* Admin key prompt */}
       {keyPrompt && (
         <div
           onClick={() => closeKeyPrompt(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(10,8,6,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 10 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(10,8,6,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 30 }}
         >
           <form
             role="dialog"
@@ -589,7 +591,7 @@ export default function MangatuVault() {
         .spin { animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
-    </div>
+    </>
   );
 }
 
